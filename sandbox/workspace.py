@@ -158,12 +158,13 @@ def _get_target_file() -> str:
 def test_stripe_webhook_null_safety():
     """Verify null-pointer dereference is guarded in StripeWebhookHandler."""
     target = _get_target_file()
-    if target and "StripeWebhook" not in target:
+    if target and "StripeWebhook" not in target and "payment-gateway" not in target:
         return
 
     possible_paths = [
         "src/main/java/com/sentinelmesh/billing/StripeWebhookHandler.java",
         "src/main/java/billing/StripeWebhookHandler.java",
+        "src/main/services/payment-gateway-svc/Handler.java",
     ]
     found = [p for p in possible_paths if os.path.exists(p)]
     if not found:
@@ -311,6 +312,20 @@ class SandboxWorkspace:
 
         with open(os.path.join(tests_dir, "test_handler_regression.py"), "w", encoding="utf-8") as f:
             f.write(DEMO_HANDLER_TEST_SUITE)
+
+        # 5. Setup Chaos microservice handler targets
+        microservices = [
+            "payment-gateway-svc",
+            "auth-session-worker",
+            "inventory-sync-db",
+            "order-fulfillment-api",
+        ]
+        for svc in microservices:
+            svc_dir = os.path.join(self.workspace_dir, "src", "main", "services", svc)
+            os.makedirs(svc_dir, exist_ok=True)
+            handler_file = os.path.join(svc_dir, "Handler.java")
+            with open(handler_file, "w", encoding="utf-8") as f:
+                f.write(DEMO_JAVA_STRIPE_HANDLER)
 
     def apply_patch(self, target_rel_path: str, diff_text: str) -> bool:
         """
