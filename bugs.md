@@ -12,7 +12,7 @@ The goal is to fix the actual underlying issues—not just modify the UI to make
 
 ## Phase 1 — Pre-Fix Code Inspection (MANDATORY)
 
-Before changing any code:
+Before changing any code :
 
 1. Inspect the frontend incident dashboard and related components.
 2. Inspect API service functions and state-management logic.
