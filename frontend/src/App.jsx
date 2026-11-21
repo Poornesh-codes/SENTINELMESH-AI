@@ -101,7 +101,7 @@ export default function App() {
         if (!prev && incidentList.length > 0) return incidentList[0];
         if (prev) {
           const updated = incidentList.find((i) => i.id === prev.id);
-          return updated || incidentList[0] || null;
+          return updated || prev;
         }
         return null;
       });
@@ -167,8 +167,9 @@ export default function App() {
   const handleInjectIncident = async (newInc) => {
     try {
       const created = await api.simulateIncident(newInc);
-      await syncIncidents();
+      setIncidents((prev) => [created, ...prev.filter((i) => i.id !== created.id)]);
       setSelectedIncident(created);
+      await syncIncidents(true);
       showToast(
         `Injected incident ${created.id || newInc.id} (${created.severity || newInc.severity}) into active telemetry stream!`,
         'bolt',
@@ -181,13 +182,64 @@ export default function App() {
   };
 
   const handleApprovePatch = async (incidentId, notes) => {
-    setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'recovered' } : prev));
-    await syncIncidents();
+    try {
+      setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'approved' } : prev));
+      setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status: 'approved' } : i)));
+      await syncIncidents(true);
+    } catch (err) {
+      console.error('[SentinelMesh] Approve error:', err);
+    }
   };
 
-  const handleRejectPatch = async (incidentId) => {
-    setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'rejected' } : prev));
-    await syncIncidents();
+  const handleRejectPatch = async (incidentId, reason) => {
+    try {
+      setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'rejected' } : prev));
+      setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status: 'rejected' } : i)));
+      await syncIncidents(true);
+    } catch (err) {
+      console.error('[SentinelMesh] Reject error:', err);
+    }
+  };
+
+  const handleRunVerification = async (incidentId) => {
+    try {
+      setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'verifying' } : prev));
+      setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status: 'verifying' } : i)));
+      const res = await api.runVerification(incidentId);
+      const isPass = res.status === 'passed';
+      const newStatus = isPass ? 'recovered' : 'failed';
+      setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: newStatus } : prev));
+      setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status: newStatus } : i)));
+      await syncIncidents(true);
+      if (isPass) {
+        showToast('Verification passed! All suites OK with 0 regressions. Recovered.', 'verified', 'text-tertiary');
+      } else {
+        showToast(`Verification failed: ${res.detail || res.status || 'Sandbox error'}`, 'error', 'text-error');
+      }
+      return res;
+    } catch (err) {
+      setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'failed' } : prev));
+      setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status: 'failed' } : i)));
+      await syncIncidents(true);
+      showToast(`Verification failed: ${err.message}`, 'error', 'text-error');
+      throw err;
+    }
+  };
+
+  const handleAnalyzeIncident = async (incidentId) => {
+    try {
+      setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'investigating' } : prev));
+      setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status: 'investigating' } : i)));
+      const res = await api.analyzeIncident(incidentId);
+      setSelectedIncident((prev) => (prev && prev.id === incidentId ? { ...prev, status: 'awaiting_approval', ...res } : prev));
+      setIncidents((prev) => prev.map((i) => (i.id === incidentId ? { ...i, status: 'awaiting_approval' } : i)));
+      await syncIncidents(true);
+      showToast('Analysis complete: Root cause isolated and patch synthesized. Awaiting human sign-off.', 'auto_fix_high', 'text-powder-blue');
+      return res;
+    } catch (err) {
+      showToast(`Analysis failed: ${err.message}`, 'error', 'text-error');
+      throw err;
+    }
   };
 
   const [pendingAction, setPendingAction] = useState(null);
@@ -389,7 +441,9 @@ export default function App() {
                   incident={selectedIncident}
                   onBack={() => setActiveTab('incidents')}
                   onApprovePatch={(incidentId, notes) => requireAuth(() => handleApprovePatch(incidentId, notes))}
-                  onRejectPatch={(incidentId) => requireAuth(() => handleRejectPatch(incidentId))}
+                  onRejectPatch={(incidentId, reason) => requireAuth(() => handleRejectPatch(incidentId, reason))}
+                  onRunVerification={(incidentId) => requireAuth(() => handleRunVerification(incidentId))}
+                  onAnalyzeIncident={(incidentId) => requireAuth(() => handleAnalyzeIncident(incidentId))}
                   showToast={showToast}
                 />
               )}

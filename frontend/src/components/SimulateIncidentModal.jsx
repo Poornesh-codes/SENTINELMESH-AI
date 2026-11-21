@@ -41,13 +41,13 @@ export default function SimulateIncidentModal({ isOpen, onClose, onInjectInciden
 
   if (!isOpen) return null;
 
-  const handleInject = () => {
+  const handleInject = async () => {
+    if (isInjecting) return;
     const scenario = CHAOS_SCENARIOS.find(s => s.id === selectedScenario);
     setIsInjecting(true);
 
-    setTimeout(() => {
-      setIsInjecting(false);
-      onInjectIncident({
+    try {
+      const incPayload = {
         id: `INC-${Math.floor(1000 + Math.random() * 9000)}`,
         application: scenario.app,
         app: scenario.app,
@@ -69,13 +69,19 @@ export default function SimulateIncidentModal({ isOpen, onClose, onInjectInciden
         sourceFile: `src/main/services/${scenario.app}/Handler.java:42`,
         correlatedPR: "PR #410 by @chaos-engineer",
         stackTrace: `ChaosEngineException: Simulated failure triggered by SRE console on ${scenario.app}`,
+        rawLogs: `ChaosEngineException: Simulated failure triggered by SRE console on ${scenario.app}`,
         podLogs: [
           { time: "Just now", level: "WARN", message: "Chaos injected via SRE console." },
           { time: "Just now", level: "ERROR", message: `${scenario.name} triggered.` }
         ]
-      });
+      };
+      await onInjectIncident(incPayload);
       onClose();
-    }, 1200);
+    } catch (err) {
+      console.error('[SimulateIncidentModal] Injection error:', err);
+    } finally {
+      setIsInjecting(false);
+    }
   };
 
   return (

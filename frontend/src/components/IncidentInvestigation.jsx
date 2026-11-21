@@ -2,7 +2,15 @@ import React, { useState } from 'react';
 import ConfirmDialog from './common/ConfirmDialog';
 import { api } from '../services/api';
 
-export default function IncidentInvestigation({ incident, onBack, onApprovePatch, onRejectPatch, showToast }) {
+export default function IncidentInvestigation({
+  incident,
+  onBack,
+  onApprovePatch,
+  onRejectPatch,
+  onRunVerification,
+  onAnalyzeIncident,
+  showToast,
+}) {
   const inc = incident || {
     id: "INC-8921",
     app: "payment-gateway-svc",
@@ -61,6 +69,7 @@ export default function IncidentInvestigation({ incident, onBack, onApprovePatch
   };
 
   const [auditComment, setAuditComment] = useState('Verified against Stripe API 2024-04 docs. Safe to execute in isolated sandbox.');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationPassed, setVerificationPassed] = useState(inc.status === 'recovered');
   const [isRejected, setIsRejected] = useState(inc.status === 'rejected');
@@ -110,38 +119,66 @@ export default function IncidentInvestigation({ incident, onBack, onApprovePatch
     setDialogState({ isOpen: true, type: 'reject' });
   };
 
+  const handleTriggerAnalysis = async () => {
+    if (!inc?.id || isAnalyzing) return;
+    setIsAnalyzing(true);
+    showToast('Investigator & Repair Agents analyzing telemetry & codebase...', 'psychology', 'text-powder-blue');
+    try {
+      if (onAnalyzeIncident) {
+        await onAnalyzeIncident(inc.id);
+      } else {
+        await api.analyzeIncident(inc.id);
+      }
+      showToast('Investigation complete: Patch synthesized and awaiting human approval.', 'verified', 'text-tertiary');
+    } catch (err) {
+      showToast(`Analysis failed: ${err.message}`, 'error', 'text-error');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleTriggerVerification = async () => {
+    if (!inc?.id || isVerifying) return;
+    setIsVerifying(true);
+    showToast('Verifier Agent testing patch in isolated Docker rootless container...', 'rocket_launch', 'text-powder-blue');
+    try {
+      if (onRunVerification) {
+        await onRunVerification(inc.id);
+      } else {
+        const res = await api.runVerification(inc.id);
+        if (res.status === 'passed') {
+          setVerificationPassed(true);
+          showToast('Verification passed! All test suites OK with 0 regressions. Recovered.', 'verified', 'text-tertiary');
+        } else {
+          showToast(`Verification failed: ${res.detail || res.status || 'Fail-Closed'}`, 'error', 'text-error');
+        }
+      }
+    } catch (err) {
+      showToast(`Verification failed: ${err.message}`, 'error', 'text-error');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleConfirmDecision = async (notes) => {
     const { type } = dialogState;
     setDialogState({ isOpen: false, type: null });
 
     if (type === 'approve') {
-      setIsVerifying(true);
       const candName = CANDIDATE_METADATA[activeCandidate]?.name || activeCandidate.toUpperCase();
       showToast(
-        `${candName} approved! Verifier Agent testing in isolated mesh-sandbox-992...`,
-        'rocket_launch',
+        `${candName} approved! SRE Human Gate signed. Awaiting sandbox verification.`,
+        'verified',
         'text-tertiary'
       );
       try {
-        try {
-          await api.analyzeIncident(inc.id);
-        } catch (aErr) {}
-        await api.approvePatch(inc.id, notes);
-        setIsApproved(true);
-        if (onApprovePatch) onApprovePatch(inc.id, notes || auditComment);
-
-        try {
-          await api.runVerification(inc.id);
-          setIsVerifying(false);
-          setVerificationPassed(true);
-          showToast('Verification passed! All test suites OK with 0 regressions. Recovered.', 'verified', 'text-tertiary');
-        } catch (vErr) {
-          setIsVerifying(false);
-          console.warn('[SentinelMesh] Verification outcome:', vErr.message);
-          showToast(`Verification: ${vErr.message}`, 'info', 'text-amber-500');
+        if (onApprovePatch) {
+          await onApprovePatch(inc.id, notes || auditComment);
+        } else {
+          await api.approvePatch(inc.id, notes || auditComment);
         }
+        setIsApproved(true);
       } catch (err) {
-        setIsVerifying(false);
         showToast(`Approval failed: ${err.message}`, 'error', 'text-error');
       }
     } else if (type === 'reject') {
@@ -165,6 +202,14 @@ export default function IncidentInvestigation({ incident, onBack, onApprovePatch
       setIsRejected(true);
       setRejectionReason(reasonText);
 
+      if (onRejectPatch) {
+        try {
+          await onRejectPatch(inc.id, reasonText);
+        } catch (rErr) {
+          console.warn('[IncidentInvestigation] Reject hook error:', rErr);
+        }
+      }
+
       // Determine next candidate progression
       let nextCandidate = null;
       if (rejectedCandidate === 'v1') nextCandidate = 'v2';
@@ -178,28 +223,20 @@ export default function IncidentInvestigation({ incident, onBack, onApprovePatch
         setIsSynthesizingAlternative(true);
         showToast(
           `Candidate ${rejectedCandidate.toUpperCase()} rejected. Repair Agent synthesizing Candidate ${nextCandidate.toUpperCase()}...`,
-          'cancel',
-          'text-error'
+          'auto_fix_high',
+          'text-amber-500'
         );
 
         setTimeout(() => {
           setIsSynthesizingAlternative(false);
           setActiveCandidate(nextCandidate);
           showToast(
-            `Repair Agent synthesized Alternative Candidate ${nextCandidate.toUpperCase()} (${CANDIDATE_METADATA[nextCandidate]?.name})!`,
-            'auto_fix_high',
+            `Candidate ${nextCandidate.toUpperCase()} synthesized! AST transformed: ${CANDIDATE_METADATA[nextCandidate]?.strategy}`,
+            'verified',
             'text-tertiary'
           );
-        }, 1400);
+        }, 1800);
       }
-
-      try {
-        await api.rejectPatch(inc.id, reasonText);
-      } catch (err) {
-        console.warn('Backend rejection notice:', err.message);
-      }
-
-      if (onRejectPatch) onRejectPatch(inc.id);
     }
   };
 
@@ -276,7 +313,17 @@ export default function IncidentInvestigation({ incident, onBack, onApprovePatch
                 ) : inc.status === 'approved' || isApproved ? (
                   <span className="text-amber-700 flex items-center gap-1.5 font-bold">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                    APPROVED — TRIGGERING SANDBOX
+                    APPROVED — AWAITING SANDBOX VERIFICATION
+                  </span>
+                ) : inc.status === 'failed' ? (
+                  <span className="text-rose-700 flex items-center gap-1.5 font-bold">
+                    <span className="material-symbols-outlined text-[16px]">error</span>
+                    VERIFICATION FAILED (FAIL-CLOSED)
+                  </span>
+                ) : (inc.status === 'detected' || inc.status === 'investigating') ? (
+                  <span className="text-sunset-peach flex items-center gap-1.5 font-bold">
+                    <span className="w-2 h-2 rounded-full bg-sunset-peach animate-pulse"></span>
+                    INVESTIGATING / ANOMALY DETECTED
                   </span>
                 ) : (
                   <>
@@ -1216,37 +1263,87 @@ export default function IncidentInvestigation({ incident, onBack, onApprovePatch
                 <span className="material-symbols-outlined text-[18px] text-rose-700">support_agent</span>
                 <span>Max Rejections Reached (3/3) - Escalated to On-Call SRE</span>
               </div>
+            ) : (inc.status === 'detected' || inc.status === 'investigating') ? (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleTriggerAnalysis}
+                  disabled={isAnalyzing}
+                  className="px-6 py-2.5 rounded-full bg-[#17233B] hover:bg-[#1e2f4f] text-white text-xs font-bold shadow-md flex items-center gap-2 transition-all active:scale-95 disabled:opacity-75"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <span className="material-symbols-outlined text-[18px] animate-spin">sync</span>
+                      <span>Investigating AST & Synthesizing Patch...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px] text-sunset-peach">psychology</span>
+                      <span>Start AI Investigation & Patch Synthesis</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (inc.status === 'approved' || isApproved) && !verificationPassed && !isVerifying && inc.status !== 'failed' ? (
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-slate-600 font-mono font-medium hidden sm:block">
+                  SRE Sign-Off Confirmed. Ready for Docker sandbox.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleTriggerVerification}
+                  disabled={isVerifying}
+                  className="px-6 py-2.5 rounded-full bg-[#17233B] hover:bg-[#1e2f4f] text-white text-xs font-bold shadow-md flex items-center gap-2 transition-all active:scale-95 disabled:opacity-75"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-emerald-400">rocket_launch</span>
+                  <span>Run Sandbox Verification</span>
+                </button>
+              </div>
+            ) : isVerifying || inc.status === 'verifying' ? (
+              <div className="flex items-center gap-2 px-6 py-2.5 bg-blue-50 text-blue-800 rounded-full font-mono text-xs font-bold border border-blue-200 shadow-xs">
+                <span className="material-symbols-outlined text-[18px] animate-spin text-blue-600">sync</span>
+                <span>Running Verifier Agent in Sandbox...</span>
+              </div>
+            ) : verificationPassed || inc.status === 'recovered' ? (
+              <div className="flex items-center gap-2 px-6 py-2.5 bg-emerald-50 text-emerald-800 rounded-full font-mono text-xs font-bold border border-emerald-200 shadow-xs">
+                <span className="material-symbols-outlined text-[18px] text-emerald-600">check_circle</span>
+                <span>Patch Verified & Auto-Applied (0 Regressions)</span>
+              </div>
+            ) : inc.status === 'failed' ? (
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-rose-700 font-mono font-bold flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px]">error</span>
+                  <span>Sandbox Verification Failed (Fail-Closed)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleTriggerVerification}
+                  disabled={isVerifying}
+                  className="px-5 py-2.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md flex items-center gap-2 transition-all active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-[18px]">replay</span>
+                  <span>Retry Sandbox Verification</span>
+                </button>
+              </div>
             ) : (
               <>
                 <button
+                  type="button"
                   onClick={handleOpenReject}
-                  disabled={verificationPassed || isSynthesizingAlternative}
+                  disabled={isSynthesizingAlternative}
                   className="px-5 py-2.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all shadow-xs flex items-center gap-2 border border-rose-200 disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-[18px]">cancel</span>
                   <span>{rejectionList.length > 0 ? `Reject Candidate ${activeCandidate.toUpperCase()}` : 'Reject & Request Alternative'}</span>
                 </button>
                 <button
+                  type="button"
                   onClick={handleOpenApprove}
-                  disabled={isVerifying || verificationPassed || isSynthesizingAlternative}
+                  disabled={isSynthesizingAlternative}
                   className="px-6 py-2.5 rounded-full bg-[#17233B] hover:bg-[#1e2f4f] text-white text-xs font-bold shadow-md flex items-center gap-2 transition-all active:scale-95 disabled:opacity-75"
                 >
-                  {isVerifying ? (
-                    <>
-                      <span className="material-symbols-outlined text-[18px] animate-spin">sync</span>
-                      <span>Running Verifier Agent...</span>
-                    </>
-                  ) : verificationPassed ? (
-                    <>
-                      <span className="material-symbols-outlined text-[18px] text-emerald-400">check_circle</span>
-                      <span>Patch Verified & Auto-Applied</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[18px] text-emerald-400">verified</span>
-                      <span>Approve Candidate {activeCandidate.toUpperCase()} & Run Verifier</span>
-                    </>
-                  )}
+                  <span className="material-symbols-outlined text-[18px] text-emerald-400">verified</span>
+                  <span>Approve Candidate {activeCandidate.toUpperCase()} (SRE Sign-off)</span>
                 </button>
               </>
             )}
@@ -1348,15 +1445,15 @@ export default function IncidentInvestigation({ incident, onBack, onApprovePatch
       <ConfirmDialog
         isOpen={dialogState.isOpen}
         variant={dialogState.type === 'reject' ? 'danger' : 'primary'}
-        title={dialogState.type === 'approve' ? 'Confirm Patch Approval & Execution' : 'Confirm Patch Rejection'}
+        title={dialogState.type === 'approve' ? 'Confirm Patch SRE Approval' : 'Confirm Patch Rejection'}
         message={
           dialogState.type === 'approve'
-            ? 'Approving records your cryptographic SRE signature and dispatches the patch to an isolated ephemeral Docker container.'
+            ? 'Approving records your cryptographic SRE signature and marks the candidate patch as approved for isolated sandbox verification.'
             : 'Rejecting this patch halts promotion and signals the Repair Agent to generate an alternative candidate.'
         }
         warning={
           dialogState.type === 'approve'
-            ? 'Warning: Approval initiates sandbox execution. Recovery is ONLY confirmed after independent test suites report 100% pass.'
+            ? 'Notice: Approval authorizes the patch for verification. Recovery is ONLY confirmed after independent test suites report 100% pass.'
             : null
         }
         details={{

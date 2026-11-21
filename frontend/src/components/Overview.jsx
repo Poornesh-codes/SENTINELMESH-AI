@@ -66,10 +66,22 @@ export default function Overview({ incidents = [], onSelectIncident, onSimulateC
   };
 
   const safeIncidents = Array.isArray(incidents) ? incidents : [];
-  const activeIncidents = safeIncidents.filter(i => i.status !== 'recovered' && i.status !== 'resolved' && i.status !== 'closed' && i.status !== 'rejected' && i.status !== 'approved');
-  const investigatingCount = safeIncidents.filter(i => i.status === 'investigating' || i.status === 'detected' || i.status === 'running').length;
-  const pendingCount = safeIncidents.filter(i => i.status === 'awaiting_approval' || i.status === 'Patch Proposed' || i.status === 'patch_pending_approval').length;
-  const recoveredCount = safeIncidents.filter(i => i.status === 'recovered' || i.status === 'resolved' || i.status === 'closed' || i.status === 'approved' || i.status === 'verifying').length;
+  const activeIncidents = safeIncidents.filter(i => {
+    const s = (i.status || '').toLowerCase().replace(/ /g, '_');
+    return s !== 'recovered' && s !== 'resolved' && s !== 'closed' && s !== 'rejected';
+  });
+  const investigatingCount = safeIncidents.filter(i => {
+    const s = (i.status || '').toLowerCase().replace(/ /g, '_');
+    return s === 'investigating' || s === 'detected' || s === 'running';
+  }).length;
+  const pendingCount = safeIncidents.filter(i => {
+    const s = (i.status || '').toLowerCase().replace(/ /g, '_');
+    return s === 'awaiting_approval' || s === 'patch_proposed' || s === 'patch_pending_approval';
+  }).length;
+  const recoveredCount = safeIncidents.filter(i => {
+    const s = (i.status || '').toLowerCase().replace(/ /g, '_');
+    return s === 'recovered' || s === 'resolved' || s === 'closed';
+  }).length;
 
   return (
     <div className="flex flex-col w-full gap-8">

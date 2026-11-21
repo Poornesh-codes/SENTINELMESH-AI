@@ -26,7 +26,7 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || null;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://sentinelmesh-ai-1.onrender.com';
 
 const TOKEN_KEY = 'sentinelmesh_auth_token';
 const USER_KEY = 'sentinelmesh_auth_user';
@@ -266,10 +266,48 @@ export const api = {
     }
 
     await mockDelay(500);
-    incidentsStore = incidentsStore.map((inc) =>
-      inc.id === id ? { ...inc, status: 'investigating' } : inc
-    );
-    return { status: 'investigating', incidentId: id };
+    let updatedIncident = null;
+    incidentsStore = incidentsStore.map((inc) => {
+      if (inc.id === id) {
+        const patchId = `PAT-${id.replace('INC-', '')}`;
+        const proposedPatch = inc.proposedPatch || {
+          id: patchId,
+          incidentId: id,
+          filePath: inc.sourceFile || 'src/main/services/Handler.java',
+          diffSummary: '-1 line / +3 lines',
+          explanation: 'Synthesized defensive guard against null dereference.',
+          status: 'pending',
+        };
+        updatedIncident = {
+          ...inc,
+          status: 'awaiting_approval',
+          pipelineAgent: `Repair Agent (Patch ${patchId} ready for sign-off)`,
+          proposedPatch,
+          proposed_patch: proposedPatch,
+        };
+        return updatedIncident;
+      }
+      return inc;
+    });
+
+    const auditRecord = {
+      id: `AUD-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
+      agent: 'Investigator & Repair Agents',
+      action: 'ANALYSIS_COMPLETED',
+      incident: id,
+      status: 'completed',
+      details: `[DEMO DATA] Analysis completed for ${id}. Defensive patch generated and queued for human approval.`,
+      hash: '0x' + Math.random().toString(16).substring(2, 10) + '...anl',
+    };
+    auditLogStore = [auditRecord, ...auditLogStore];
+
+    return {
+      status: 'awaiting_approval',
+      incidentId: id,
+      incident: updatedIncident,
+      message: `Investigation completed for ${id}. Defensive patch generated and awaiting human sign-off.`,
+    };
   },
 
   /**
@@ -288,8 +326,8 @@ export const api = {
       if (inc.id === incidentId) {
         return {
           ...inc,
-          status: 'verifying',
-          pipelineAgent: 'Verifier Agent (Running sandbox verification)',
+          status: 'approved',
+          pipelineAgent: 'Sandbox Agent (Awaiting isolated application & verification)',
         };
       }
       return inc;
@@ -302,12 +340,12 @@ export const api = {
       action: 'PATCH_APPROVED',
       incident: incidentId,
       status: 'completed',
-      details: notes || 'Human approval signed. Patch dispatched to ephemeral sandbox.',
+      details: notes || 'Human approval signed. Patch approved for sandbox execution.',
       hash: '0x' + Math.random().toString(16).substring(2, 10) + '...app',
     };
     auditLogStore = [auditRecord, ...auditLogStore];
 
-    return { success: true, incidentId, status: 'verifying' };
+    return { success: true, incidentId, status: 'approved' };
   },
 
   /**

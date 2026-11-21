@@ -37,7 +37,9 @@ export default function IncidentsConsole({ incidents, onSelectIncident, onSimula
       const normStatus = (inc.status || '').toLowerCase().replace(/ /g, '_');
       const matchesStatus =
         statusFilter === 'all' ||
-        (statusFilter === 'active' ? normStatus !== 'recovered' : normStatus === statusFilter);
+        (statusFilter === 'active'
+          ? (normStatus !== 'recovered' && normStatus !== 'resolved' && normStatus !== 'closed' && normStatus !== 'rejected')
+          : normStatus === statusFilter);
 
       const matchesApp = appFilter === 'all' || appName === appFilter;
 
