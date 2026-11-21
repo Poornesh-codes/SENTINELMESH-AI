@@ -147,6 +147,35 @@ class IncidentService:
                 ]
                 explanation = "Guards database pool exhaustion with non-blocking user retrieval fallback."
                 diff_summary = "-3 lines / +5 lines"
+            elif "stripe" in inc_title or "payment" in app_name or "stripe" in inc_src or inc_src.endswith(".java"):
+                diff_text = (
+                    f"--- a/{source_file}\n"
+                    f"+++ b/{source_file}\n"
+                    "@@ -72,2 +72,5 @@\n"
+                    "-        String customerId = payload.getCustomer().getId();\n"
+                    "-        billingService.recordTransaction(customerId, payload.getAmount());\n"
+                    "+        String customerId = Optional.ofNullable(payload.getCustomer())\n"
+                    "+                .map(Customer::getId)\n"
+                    '+                .orElseGet(() -> payload.getMetadata().getOrDefault("guest_customer_id", "GUEST_UNKNOWN"));\n'
+                    "+        billingService.recordTransaction(customerId, payload.getAmount());\n"
+                    '+        log.info("Handled webhook event for customer: {}", customerId);\n'
+                )
+                orig_lines = [
+                    {"num": 70, "text": '        Objects.requireNonNull(payload, "Payload cannot be null");', "type": "context"},
+                    {"num": 71, "text": '        // Unpatched bug: payload.getCustomer() dereference NullPointerException', "type": "context"},
+                    {"num": 72, "text": "        String customerId = payload.getCustomer().getId();", "type": "deleted"},
+                    {"num": 73, "text": "        billingService.recordTransaction(customerId, payload.getAmount());", "type": "deleted"},
+                ]
+                patched_lines = [
+                    {"num": 70, "text": '        Objects.requireNonNull(payload, "Payload cannot be null");', "type": "context"},
+                    {"num": 71, "text": "        String customerId = Optional.ofNullable(payload.getCustomer())", "type": "added"},
+                    {"num": 72, "text": "                .map(Customer::getId)", "type": "added"},
+                    {"num": 73, "text": '                .orElseGet(() -> payload.getMetadata().getOrDefault("guest_customer_id", "GUEST_UNKNOWN"));', "type": "added"},
+                    {"num": 74, "text": "        billingService.recordTransaction(customerId, payload.getAmount());", "type": "added"},
+                    {"num": 75, "text": '        log.info("Handled webhook event for customer: {}", customerId);', "type": "added"},
+                ]
+                explanation = "Uses Optional to guard nullable customer object and falls back to guest_customer_id from payload metadata."
+                diff_summary = "-2 lines / +5 lines"
             else:
                 diff_text = (
                     f"--- a/{source_file}\n"

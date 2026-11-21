@@ -6,6 +6,7 @@ from app.repositories import verification_repo, incident_repo, patch_repo, audit
 from app.schemas.verification import VerificationRunResponse
 from app.services.audit_service import audit_service
 from sandbox import sandbox_service
+from sandbox.validator import PatchValidationError
 
 
 class VerificationService:
@@ -233,6 +234,16 @@ class VerificationService:
                 persist_results=False,
             )
         except Exception as exec_err:
+            if isinstance(exec_err, FileNotFoundError) or "does not exist in workspace snapshot" in str(exec_err):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Target file missing from workspace snapshot: {str(exec_err)}",
+                )
+            if isinstance(exec_err, PatchValidationError):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Patch validation error: {str(exec_err)}",
+                )
             now_iso = datetime.now(timezone.utc).isoformat()
             timeline = incident.get("timeline", [])
             timeline.append({

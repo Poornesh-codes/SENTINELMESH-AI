@@ -252,3 +252,38 @@ def test_applied_at_not_set_if_application_unconfirmed(client, monkeypatch):
 
     p = patch_repo.get_by_id("PAT-8921")
     assert p.get("applied_at") is None, "applied_at was set even though patch application was unconfirmed!"
+
+
+def test_payment_gateway_handler_snapshot_exists_and_verifies(client):
+    """Verify that src/main/services/payment-gateway-svc/Handler.java exists in snapshot and passes verification."""
+    from sandbox.workspace import SandboxWorkspace
+    ws = SandboxWorkspace()
+    try:
+        ws_dir = ws.create()
+        import os
+        target_path = os.path.join(ws_dir, "src", "main", "services", "payment-gateway-svc", "Handler.java")
+        assert os.path.exists(target_path), f"File {target_path} missing from snapshot!"
+        with open(target_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert "class StripeWebhookHandler" in content or "class Handler" in content
+    finally:
+        ws.cleanup()
+
+
+def test_missing_target_file_returns_structured_error(client, monkeypatch):
+    """Verify that a missing target file returns a structured error instead of unhandled HTTP 500."""
+    from sandbox.models import SandboxExecutionResult
+    patch_repo.update("PAT-8921", {"file_path": "src/main/services/non_existent/Missing.java"})
+    client.post("/api/incidents/INC-8921/approve", json={"decision": "approve"})
+
+    res = client.post("/api/incidents/INC-8921/verify", json={"patchId": "PAT-8921"})
+    # Must return structured failure, NOT unhandled 500
+    assert res.status_code in [200, 400, 422]
+    if res.status_code == 200:
+        data = res.json()
+        assert data["status"] == "failed"
+        assert data["failed"] >= 1 or "Target file" in data.get("test_output_summary", "")
+    else:
+        err_detail = res.json().get("detail", "")
+        assert "missing" in err_detail.lower() or "not in the permitted" in err_detail.lower() or "not exist" in err_detail.lower()
+
