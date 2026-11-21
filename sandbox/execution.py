@@ -473,6 +473,7 @@ class SandboxService:
                 incidentId=incident_id,
                 patchId=patch_id,
                 status="failed",
+                failedCount=1,
                 startedAt=started_at,
                 completedAt=current_utc_iso(),
                 error=f"Patch validation failed: {str(e)}",
@@ -487,13 +488,29 @@ class SandboxService:
             diff_text = patch_data.get("diff") or patch_data.get("patch_content") or ""
 
             # 4. Apply patch strictly inside the disposable workspace
-            applied = workspace.apply_patch(target_file, diff_text)
+            try:
+                applied = workspace.apply_patch(target_file, diff_text)
+            except FileNotFoundError as fnf_err:
+                return SandboxExecutionResult(
+                    runId=run_id,
+                    incidentId=incident_id,
+                    patchId=patch_id,
+                    status="failed",
+                    failedCount=1,
+                    changedFiles=[],
+                    startedAt=started_at,
+                    completedAt=current_utc_iso(),
+                    error=f"Target file '{target_file}' does not exist in workspace snapshot: {str(fnf_err)}",
+                    dockerIsolated=False,
+                    cleanedUp=True,
+                )
             if not applied:
                 return SandboxExecutionResult(
                     runId=run_id,
                     incidentId=incident_id,
                     patchId=patch_id,
                     status="failed",
+                    failedCount=1,
                     changedFiles=workspace.applied_files,
                     startedAt=started_at,
                     completedAt=current_utc_iso(),
