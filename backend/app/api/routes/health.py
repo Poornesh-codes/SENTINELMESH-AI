@@ -7,6 +7,7 @@ router = APIRouter(tags=["Health"])
 
 
 @router.get("/health", summary="Application health check")
+@router.get("/api/health", summary="Application health check (alias)")
 def health_check(response: Response):
     is_prod = (settings.ENVIRONMENT or "").strip().lower() == "production"
 

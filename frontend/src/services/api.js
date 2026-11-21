@@ -26,7 +26,9 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://sentinelmesh-ai-1.onrender.com';
+const RAW_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://sentinelmesh-ai-1.onrender.com').trim();
+// Normalize API base URL: strip trailing slashes and trailing /api to prevent 404s
+const API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, '').replace(/\/api$/, '');
 
 const TOKEN_KEY = 'sentinelmesh_auth_token';
 const USER_KEY = 'sentinelmesh_auth_user';
