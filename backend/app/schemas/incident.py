@@ -29,7 +29,7 @@ class IncidentCreate(BaseModel):
     impact: Optional[str] = None
     stack_trace: Optional[str] = Field(None, alias="stackTrace")
     evidence_ids: List[str] = Field(default_factory=list, alias="evidenceIds")
-    raw_logs: Optional[str] = None
+    raw_logs: Optional[str] = Field(None, alias="rawLogs")
     pipeline_agent: Optional[str] = Field(None, alias="pipelineAgent")
     root_cause: Optional[str] = Field(None, alias="rootCause")
     source_file: Optional[str] = Field(None, alias="sourceFile")

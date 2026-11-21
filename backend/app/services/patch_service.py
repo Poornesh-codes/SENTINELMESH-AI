@@ -24,8 +24,8 @@ class PatchService:
     def process_patch_decision(
         self,
         incident_id: str,
-        patch_id: Optional[str],
-        decision: str,
+        patch_id: Optional[str] = None,
+        decision: str = "approve",
         notes: Optional[str] = "",
         reason: Optional[str] = "",
         actor: Optional[str] = "Human Operator",
